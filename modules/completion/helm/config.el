@@ -57,8 +57,6 @@ be negative.")
         helm-mode-line-string nil
         helm-ff-auto-update-initial-value nil
         helm-find-files-doc-header nil
-        ;; Don't override evil-ex's completion
-        helm-mode-handle-completion-in-region nil
         ;; Default helm window sizes
         helm-display-buffer-default-width nil
         helm-display-buffer-default-height 0.25
@@ -73,26 +71,32 @@ be negative.")
 
   :init
   (when (featurep! +childframe)
+    ;; If this is set to 'iconify-top-level then Emacs will be minimized upon
+    ;; helm completion.
+    (setq iconify-child-frame 'make-invisible)
     (setq helm-display-function #'+helm-posframe-display-fn))
 
   (let ((fuzzy (featurep! +fuzzy)))
-    (setq helm-M-x-fuzzy-match fuzzy
-          helm-apropos-fuzzy-match fuzzy
-          helm-apropos-fuzzy-match fuzzy
+    (setq helm-apropos-fuzzy-match fuzzy
           helm-bookmark-show-location fuzzy
           helm-buffers-fuzzy-matching fuzzy
-          helm-completion-in-region-fuzzy-match fuzzy
-          helm-completion-in-region-fuzzy-match fuzzy
           helm-ff-fuzzy-matching fuzzy
           helm-file-cache-fuzzy-match fuzzy
           helm-flx-for-helm-locate fuzzy
           helm-imenu-fuzzy-match fuzzy
           helm-lisp-fuzzy-completion fuzzy
           helm-locate-fuzzy-match fuzzy
-          helm-mode-fuzzy-match fuzzy
           helm-projectile-fuzzy-match fuzzy
           helm-recentf-fuzzy-match fuzzy
-          helm-semantic-fuzzy-match fuzzy))
+          helm-semantic-fuzzy-match fuzzy)
+    ;; Make sure that we have helm-multi-matching or fuzzy matching,
+    ;; (as prescribed by the fuzzy flag) also in the following cases:
+    ;; - helmized commands that use `completion-at-point' and similar functions
+    ;; - native commands that fall back to `completion-styles' like `helm-M-x'
+    (push (if EMACS27+
+              (if fuzzy 'flex 'helm)
+            (if fuzzy 'helm-flex 'helm))
+          completion-styles))
 
   :config
   (set-popup-rule! "^\\*helm" :vslot -100 :size 0.22 :ttl nil)
@@ -113,10 +117,12 @@ be negative.")
   (advice-add #'helm-display-mode-line :override #'+helm--hide-mode-line)
   (advice-add #'helm-ag-show-status-default-mode-line :override #'ignore)
 
+  ;; Hide minibuffer if `helm-echo-input-in-header-line'
+  (add-hook 'helm-minibuffer-set-up-hook #'helm-hide-minibuffer-maybe)
+
   ;; Use helpful instead of describe-* to display documentation
   (dolist (fn '(helm-describe-variable helm-describe-function))
     (advice-add fn :around #'doom-use-helpful-a)))
-
 
 (use-package! helm-flx
   :when (featurep! +fuzzy)

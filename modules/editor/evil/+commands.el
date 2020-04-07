@@ -28,8 +28,6 @@
 
 ;; TODO (evil-ex-define-cmd "rx"          'doom:regex)             ; open re-builder
 (evil-ex-define-cmd "sh[ell]"     #'+eshell:run)
-(evil-ex-define-cmd "t[mux]"      #'+tmux:run)              ; send to tmux
-(evil-ex-define-cmd "tcd"         #'+tmux:cd-here)          ; cd to default-directory in tmux
 (evil-ex-define-cmd "pad"         #'+evil:open-scratch-buffer)
 
 ;;; GIT
@@ -73,8 +71,9 @@
        (evil-ex-define-cmd "pg[grep]d" #'+helm:project-search-from-cwd)))
 
 ;;; Project tools
-(evil-ex-define-cmd "compile"     #'+evil:compile)
-(evil-ex-define-cmd "mak[e]"      #'+evil:make)
+(evil-ex-define-cmd "com[pile]"   #'+evil:compile)
+(evil-ex-define-cmd "make"        #'+evil:make)
+(evil-ex-define-cmd "mk"          #'+evil:make) ; convenience alias
 (evil-ex-define-cmd "debug"       #'+debugger/start)
 (evil-ex-define-cmd "er[rors]"    #'flycheck-list-errors)
 

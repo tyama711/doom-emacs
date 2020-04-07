@@ -21,7 +21,7 @@ This marks a foldable marker for `outline-minor-mode' in elisp buffers.")
   :config
   (set-repl-handler! '(emacs-lisp-mode lisp-interaction-mode) #'+emacs-lisp/open-repl)
   (set-eval-handler! '(emacs-lisp-mode lisp-interaction-mode) #'+emacs-lisp-eval)
-  (set-lookup-handlers! 'emacs-lisp-mode
+  (set-lookup-handlers! '(emacs-lisp-mode helpful-mode)
     :definition    #'+emacs-lisp-lookup-definition
     :documentation #'+emacs-lisp-lookup-documentation)
   (set-docsets! '(emacs-lisp-mode lisp-interaction-mode) "Emacs Lisp")
@@ -48,9 +48,6 @@ This marks a foldable marker for `outline-minor-mode' in elisp buffers.")
   ;; variable-width indentation is superior in elisp
   (add-to-list 'doom-detect-indentation-excluded-modes 'emacs-lisp-mode nil #'eq)
 
-  ;; Use helpful instead of describe-* from `company'
-  (advice-add #'elisp--company-doc-buffer :around #'doom-use-helpful-a)
-
   (add-hook! 'emacs-lisp-mode-hook
              #'outline-minor-mode
              ;; fontificiation
@@ -58,6 +55,13 @@ This marks a foldable marker for `outline-minor-mode' in elisp buffers.")
              #'highlight-quoted-mode
              ;; initialization
              #'+emacs-lisp-extend-imenu-h)
+
+  (autoload 'straight-register-file-modification "straight")
+  (add-hook! 'emacs-lisp-mode-hook
+    (defun +emacs-lisp-init-straight-h ()
+      (when (file-in-directory-p (or buffer-file-name default-directory) doom-local-dir)
+        (add-hook 'after-save-hook #'straight-register-file-modification
+                  nil 'local))))
 
   ;; Flycheck's two emacs-lisp checkers produce a *lot* of false positives in
   ;; emacs configs, so we disable `emacs-lisp-checkdoc' and reduce the
@@ -122,7 +126,7 @@ This marks a foldable marker for `outline-minor-mode' in elisp buffers.")
 
 
 (use-package! flycheck-cask
-  :when (featurep! :tools flycheck)
+  :when (featurep! :checkers syntax)
   :defer t
   :init
   (add-hook! 'emacs-lisp-mode-hook

@@ -43,10 +43,11 @@ possible."
             (and buffer-file-name
                  (not doom-large-file-p)
                  (file-exists-p buffer-file-name)
-                 (> (nth 7 (file-attributes buffer-file-name))
-                    (* 1024 1024
-                       (assoc-default buffer-file-name doom-large-file-size-alist
-                                      #'string-match-p)))))
+                 (ignore-errors
+                   (> (nth 7 (file-attributes buffer-file-name))
+                      (* 1024 1024
+                         (assoc-default buffer-file-name doom-large-file-size-alist
+                                        #'string-match-p))))))
       (prog1 (apply orig-fn args)
         (if (memq major-mode doom-large-file-excluded-modes)
             (setq doom-large-file-p nil)
@@ -84,16 +85,22 @@ possible."
       create-lockfiles nil
       make-backup-files nil
       ;; But have a place to store them in case we do use them...
-      auto-save-list-file-name (concat doom-cache-dir "autosave")
-      backup-directory-alist `(("." . ,(concat doom-cache-dir "backup/"))))
+      ;; auto-save-list-file-name (concat doom-cache-dir "autosave")
+      auto-save-list-file-prefix (concat doom-cache-dir "autosave/")
+      auto-save-file-name-transforms `((".*" ,(concat doom-cache-dir "autosave/") t))
+      backup-directory-alist `((".*" . ,(concat doom-cache-dir "backup/"))))
+
+(after! tramp
+  (add-to-list 'backup-directory-alist (cons tramp-file-name-regexp nil)))
 
 (add-hook! 'after-save-hook
   (defun doom-guess-mode-h ()
     "Guess mode when saving a file in `fundamental-mode'."
-    (and (eq major-mode 'fundamental-mode)
-         (buffer-file-name (buffer-base-buffer))
-         (eq (current-buffer) (window-buffer (selected-window))) ; only visible buffers
-         (set-auto-mode))))
+    (when (eq major-mode 'fundamental-mode)
+      (let ((buffer (or (buffer-base-buffer) (current-buffer))))
+        (and (buffer-file-name buffer)
+             (eq buffer (window-buffer (selected-window))) ; only visible buffers
+             (set-auto-mode))))))
 
 
 ;;
@@ -132,11 +139,12 @@ possible."
 
 ;; Fixes the clipboard in tty Emacs by piping clipboard I/O through xclip, xsel,
 ;; pb{copy,paste}, wl-copy, termux-clipboard-get, or getclip (cygwin).
-(add-hook! 'tty-setup-hook
-  (defun doom-init-clipboard-in-tty-emacs-h ()
-    (and (not (getenv "SSH_CONNECTION"))
-         (require 'xclip nil t)
-         (xclip-mode +1))))
+(unless IS-WINDOWS
+  (add-hook! 'tty-setup-hook
+    (defun doom-init-clipboard-in-tty-emacs-h ()
+      (and (not (getenv "SSH_CONNECTION"))
+           (require 'xclip nil t)
+           (xclip-mode +1)))))
 
 
 ;;
@@ -388,7 +396,7 @@ files, so we replace calls to `pp' with the much faster `prin1'."
   (global-set-key [remap describe-command]  #'helpful-command)
   (global-set-key [remap describe-variable] #'helpful-variable)
   (global-set-key [remap describe-key]      #'helpful-key)
-  (global-set-key [remap describe-symbol]   #'doom/describe-symbol)
+  (global-set-key [remap describe-symbol]   #'helpful-symbol)
 
   (defun doom-use-helpful-a (orig-fn &rest args)
     "Force ORIG-FN to use helpful instead of the old describe-* commands."
@@ -420,9 +428,10 @@ files, so we replace calls to `pp' with the much faster `prin1'."
   :after-call doom-switch-buffer-hook after-find-file
   :commands sp-pair sp-local-pair sp-with-modes sp-point-in-comment sp-point-in-string
   :config
+  ;; smartparens recognizes `slime-mrepl-mode', but not `sly-mrepl-mode', so...
+  (add-to-list 'sp-lisp-modes 'sly-mrepl-mode)
   ;; Load default smartparens rules for various languages
   (require 'smartparens-config)
-
   ;; Overlays are too distracting and not terribly helpful. show-parens does
   ;; this for us already (and is faster), so...
   (setq sp-highlight-pair-overlay nil
@@ -438,11 +447,11 @@ files, so we replace calls to `pp' with the much faster `prin1'."
     (setq sp-cancel-autoskip-on-backward-movement nil))
 
   ;; The default is 100, because smartparen's scans are relatively expensive
-  ;; (especially with large pair lists for somoe modes), we halve it, as a
+  ;; (especially with large pair lists for some modes), we reduce it, as a
   ;; better compromise between performance and accuracy.
-  (setq sp-max-prefix-length 50)
-  ;; This speeds up smartparens. No pair has any business being longer than 4
-  ;; characters; if they must, set it buffer-locally.
+  (setq sp-max-prefix-length 25)
+  ;; No pair has any business being longer than 4 characters; if they must, set
+  ;; it buffer-locally. It's less work for smartparens.
   (setq sp-max-pair-length 4)
   ;; This isn't always smart enough to determine when we're in a string or not.
   ;; See https://github.com/Fuco1/smartparens/issues/783.
@@ -454,9 +463,9 @@ files, so we replace calls to `pp' with the much faster `prin1'."
 
   (add-hook! 'minibuffer-setup-hook
     (defun doom-init-smartparens-in-minibuffer-maybe-h ()
-      "Enable `smartparens-mode' in the minibuffer, during `eval-expression' or
-`evil-ex'."
-      (when (memq this-command '(eval-expression evil-ex))
+      "Enable `smartparens-mode' in the minibuffer, during `eval-expression',
+`pp-eval-expression' or `evil-ex'."
+      (when (memq this-command '(eval-expression pp-eval-expression evil-ex))
         (smartparens-mode))))
 
   ;; You're likely writing lisp in the minibuffer, therefore, disable these
@@ -485,6 +494,7 @@ files, so we replace calls to `pp' with the much faster `prin1'."
   :config
   (when doom-interactive-mode
     (global-so-long-mode +1))
+  (setq so-long-threshold 400) ; reduce false positives w/ larger threshold
   ;; Don't disable syntax highlighting and line numbers, or make the buffer
   ;; read-only, in `so-long-minor-mode', so we can have a basic editing
   ;; experience in them, at least. It will remain off in `so-long-mode',
@@ -512,11 +522,21 @@ files, so we replace calls to `pp' with the much faster `prin1'."
               undo-tree-mode
               highlight-indent-guides-mode
               hl-fill-column-mode))
-  ;; HACK Fix #2183: `so-long-detected-long-line-p' tries to parse comment
-  ;;      syntax, but in some buffers comment state isn't initialized, leading
-  ;;      to a wrong-type-argument: stringp error.
   (defun doom-buffer-has-long-lines-p ()
-    (let ((so-long-skip-leading-comments (bound-and-true-p comment-use-syntax)))
+    ;; HACK Fix #2183: `so-long-detected-long-line-p' tries to parse comment
+    ;;      syntax, but in some buffers comment state isn't initialized,
+    ;;      leading to a wrong-type-argument: stringp error.
+    (let ((so-long-skip-leading-comments (bound-and-true-p comment-use-syntax))
+          ;; HACK If visual-line-mode is on, then false positives are more
+          ;;      likely, so up the threshold. More so in text-mode, since long
+          ;;      paragraphs are the norm.
+          (so-long-threshold
+           (if visual-line-mode
+               (* so-long-threshold
+                  (if (derived-mode-p 'text-mode)
+                      3
+                    2))
+             so-long-threshold)))
       (so-long-detected-long-line-p)))
   (setq so-long-predicate #'doom-buffer-has-long-lines-p))
 
@@ -525,7 +545,9 @@ files, so we replace calls to `pp' with the much faster `prin1'."
   ;; Branching & persistent undo
   :after-call doom-switch-buffer-hook after-find-file
   :config
-  (setq undo-tree-auto-save-history t
+  (setq undo-tree-visualizer-diff t
+        undo-tree-auto-save-history t
+        undo-tree-enable-undo-in-region t
         ;; Increase undo-limits by a factor of ten to avoid emacs prematurely
         ;; truncating the undo history and corrupting the tree. See
         ;; https://github.com/syl20bnr/spacemacs/issues/12110
@@ -556,16 +578,18 @@ files, so we replace calls to `pp' with the much faster `prin1'."
            (stringp (car item))
            (setcar item (substring-no-properties (car item))))))
 
+  ;; Undo-tree is too chatty about saving its history files. This doesn't
+  ;; totally suppress it logging to *Messages*, it only stops it from appearing
+  ;; in the echo-area.
+  (advice-add #'undo-tree-save-history :around #'doom-shut-up-a)
+
   (global-undo-tree-mode +1))
 
 
 (use-package! ws-butler
   ;; a less intrusive `delete-trailing-whitespaces' on save
   :after-call after-find-file
-  :config
-  (appendq! ws-butler-global-exempt-modes
-            '(special-mode comint-mode term-mode eshell-mode))
-  (ws-butler-global-mode +1))
+  :config (ws-butler-global-mode +1))
 
 (provide 'core-editor)
 ;;; core-editor.el ends here

@@ -13,7 +13,8 @@
 ;; `dumb-jump' to find what you want.
 
 (defvar +lookup-provider-url-alist
-  (append '(("Google"            +lookup--online-backend-google "https://google.com/search?q=%s")
+  (append '(("Doom Emacs issues" "https://github.com/hlissner/doom-emacs/issues?q=is%%3Aissue+%s")
+            ("Google"            +lookup--online-backend-google "https://google.com/search?q=%s")
             ("Google images"     "https://www.google.com/images?q=%s")
             ("Google maps"       "https://maps.google.com/maps?q=%s")
             ("Project Gutenberg" "http://www.gutenberg.org/ebooks/search/?query=%s")
@@ -84,15 +85,15 @@ If the argument is interactive (satisfies `commandp'), it is called with
 argument: the identifier at point. See `set-lookup-handlers!' about adding to
 this list.")
 
-(defvar +lookup-dictionary-enable-online t
+(defvar +lookup-dictionary-prefer-offline (featurep! +offline)
   "If non-nil, look up dictionaries online.
 
 Setting this to nil will force it to use offline backends, which may be less
 than perfect, but available without an internet connection.
 
-Used by `+lookup/word-definition' and `+lookup/word-synonyms'.
+Used by `+lookup/dictionary-definition' and `+lookup/synonyms'.
 
-For `+lookup/word-definition', this is ignored on Mac, where Emacs users
+For `+lookup/dictionary-definition', this is ignored on Mac, where Emacs users
 Dictionary.app behind the scenes to get definitions.")
 
 
@@ -193,5 +194,9 @@ See https://github.com/magit/ghub/issues/81"
 
 (when (featurep! +dictionary)
   (define-key! text-mode-map
-    [remap +lookup/definition] #'+lookup/word-definition
-    [remap +lookup/references] #'+lookup/word-synonyms))
+    [remap +lookup/definition] #'+lookup/dictionary-definition
+    [remap +lookup/references] #'+lookup/synonyms))
+
+
+;;;###package synosaurus
+(setq synosaurus-choose-method 'default) ; use ivy/helm instead of ido

@@ -10,6 +10,7 @@ one wants that.")
 (defvar doom-autoload-cached-vars
   '(load-path
     auto-mode-alist
+    interpreter-mode-alist
     Info-directory-list
     doom-disabled-packages)
   "A list of variables to be cached in `doom-package-autoload-file'.")
@@ -26,14 +27,16 @@ one wants that.")
 (defun doom-cli-reload-core-autoloads (&optional file)
   (print! (start "(Re)generating core autoloads..."))
   (print-group!
-   (let ((file (or file doom-autoload-file)))
+   (let ((file (or file doom-autoload-file))
+         doom-autoload-cached-vars)
      (cl-check-type file string)
      (and (print! (start "Generating core autoloads..."))
           (doom-cli--write-autoloads
            file (doom-cli--generate-autoloads
-                 (cl-loop for dir in (append (list doom-core-dir)
-                                             (cdr (doom-module-load-path 'all-p))
-                                             (list doom-private-dir))
+                 (cl-loop for dir
+                          in (append (list doom-core-dir)
+                                     (cdr (doom-module-load-path 'all-p))
+                                     (list doom-private-dir))
                           if (doom-glob dir "autoload.el") collect it
                           if (doom-glob dir "autoload/*.el") append it)
                  'scan))
@@ -132,10 +135,8 @@ one wants that.")
           (form))))
 
 (defun doom-cli--generate-autoloads-autodefs (file buffer module &optional module-enabled-p)
-  (with-current-buffer
-      (or (get-file-buffer file)
-          (autoload-find-file file))
-    (goto-char (point-min))
+  (with-temp-buffer
+    (insert-file-contents file)
     (while (re-search-forward "^;;;###autodef *\\([^\n]+\\)?\n" nil t)
       (let* ((standard-output buffer)
              (form    (read (current-buffer)))
@@ -226,8 +227,10 @@ one wants that.")
               ;; `load-file-name' is meaningless in a concatenated
               ;; mega-autoloads file, so we replace references to it with the
               ;; file they came from.
-              (unless (doom-point-in-string-or-comment-p)
-                (replace-match filestr t t)))))
+              (let ((ppss (save-excursion (syntax-ppss))))
+                (or (nth 3 ppss)
+                    (nth 4 ppss)
+                    (replace-match filestr t t))))))
         (let ((load-file-name file)
               (load-path
                (append (list doom-private-dir)

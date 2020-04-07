@@ -88,7 +88,7 @@ library/userland functions"
                     ((and (symbolp (setq module (sexp-at-point)))
                           (string-prefix-p "+" (symbol-name module)))
                      (while (symbolp (sexp-at-point))
-                       (beginning-of-sexp))
+                       (thing-at-point--beginning-of-sexp))
                      (setq flag module
                            module (car (sexp-at-point)))
                      (when (re-search-backward "\\_<:\\w+\\_>" nil t)
@@ -99,7 +99,7 @@ library/userland functions"
               (list category module flag))))))))
 
 ;;;###autoload
-(defun +emacs-lisp-lookup-definition (thing)
+(defun +emacs-lisp-lookup-definition (_thing)
   "Lookup definition of THING."
   (if-let (module (+emacs-lisp--module-at-point))
       (doom/help-modules (car module) (cadr module) 'visit-dir)
@@ -122,9 +122,9 @@ if it's callable, `apropos' otherwise."
                                     nil t))
                (when (invisible-p (point))
                  (org-show-hidden-entry))))
-           t))
-        (thing (doom/describe-symbol thing))
-        ((call-interactively #'doom/describe-symbol))))
+           'deferred))
+        (thing (helpful-symbol (intern thing)))
+        ((call-interactively #'helpful-at-point))))
 
 ;; FIXME
 ;; (defun +emacs-lisp-lookup-file (thing)
@@ -186,7 +186,7 @@ if it's callable, `apropos' otherwise."
           ("Minor modes" "^\\s-*(define-\\(?:global\\(?:ized\\)?-minor\\|generic\\|minor\\)-mode +\\([^ ()\n]+\\)" 1)
           ("Modelines" "^\\s-*(def-modeline! +\\([^ ()\n]+\\)" 1)
           ("Modeline segments" "^\\s-*(def-modeline-segment! +\\([^ ()\n]+\\)" 1)
-          ("Advice" "^\\s-*(\\(?:def\\(?:\\(?:ine\\)?-advice\\)\\) +\\([^ )\n]+\\)" 1)
+          ("Advice" "^\\s-*(\\(?:def\\(?:\\(?:ine-\\)?advice!?\\)\\) +\\([^ )\n]+\\)" 1)
           ("Macros" "^\\s-*(\\(?:cl-\\)?def\\(?:ine-compile-macro\\|macro\\) +\\([^ )\n]+\\)" 1)
           ("Inline functions" "\\s-*(\\(?:cl-\\)?defsubst +\\([^ )\n]+\\)" 1)
           ("Functions" "^\\s-*(\\(?:cl-\\)?def\\(?:un\\|un\\*\\|method\\|generic\\|-memoized!\\) +\\([^ ,)\n]+\\)" 1)

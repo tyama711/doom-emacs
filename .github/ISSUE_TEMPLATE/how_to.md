@@ -2,9 +2,10 @@
 name: How do I...
 about: How to get Doom/Emacs to behave a certain way
 labels: is:question
-title: "[HOWTO] "
-assignees: ''
 ---
+
+> Please visit our Discord server to ask how-to and workflow questions:
+> https://discord.gg/qvGgnVx -- post on Doom's issue tracker as a last resort.
 
 **What are you trying to achieve?**
 ...

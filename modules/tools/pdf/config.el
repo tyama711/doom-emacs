@@ -40,12 +40,9 @@
                            props))))
         (apply orig-fn args))))
 
-  ;; Turn off cua so copy works
-  (add-hook! 'pdf-view-mode-hook (cua-mode 0))
-
   ;; Handle PDF-tools related popups better
   (set-popup-rules!
-    '(("^\\*Outline*" :side 'right :size 40 :select nil)
+    '(("^\\*Outline*" :side right :size 40 :select nil)
       ("\\(?:^\\*Contents\\|'s annots\\*$\\)" :ignore t)))
 
   ;; The mode-line does serve any useful purpose is annotation windows

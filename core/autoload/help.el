@@ -55,7 +55,6 @@
     (python-mode     :lang python)
     (restclient-mode :lang rest)
     (ruby-mode       :lang ruby)
-    (enh-ruby-mode   :lang ruby)
     (rust-mode       :lang rust)
     (scala-mode      :lang scala)
     (sh-mode         :lang sh)
@@ -104,21 +103,6 @@ selection of all minor-modes, active or not."
     (if (fboundp symbol)
         (helpful-function symbol)
       (helpful-variable symbol))))
-
-;;;###autoload
-(defun doom/describe-symbol (symbol)
-  "Show help for SYMBOL, a variable, function or macro."
-  (interactive
-   (list (helpful--read-symbol "Symbol: " #'helpful--bound-p)))
-  (let* ((sym (intern-soft symbol))
-         (bound (boundp sym))
-         (fbound (fboundp sym)))
-    (cond ((and sym bound (not fbound))
-           (helpful-variable sym))
-          ((and sym fbound (not bound))
-           (helpful-callable sym))
-          ((apropos (format "^%s\$" symbol)))
-          ((apropos (format "%s" symbol))))))
 
 
 ;;
@@ -379,6 +363,7 @@ current file is in, or d) the module associated with the current major mode (see
   (cl-destructuring-bind (module-string path)
       (or (assoc (format "%s %s" category module) (doom--help-modules-list))
           (user-error "'%s %s' is not a valid module" category module))
+    (setq module-string (substring-no-properties module-string))
     (unless (file-readable-p path)
       (error "Can't find or read %S module at %S" module-string path))
     (cond ((not (file-directory-p path))
@@ -483,27 +468,44 @@ If prefix arg is present, refresh the cache."
         (insert (symbol-name package) "\n")
 
         (package--print-help-section "Source")
-        (insert (or (pcase (doom-package-backend package)
-                      (`straight
-                       (format! "Straight (%s)\n%s"
-                                (let ((default-directory (straight--build-dir (symbol-name package))))
-                                  (cdr
-                                   (doom-call-process "git" "log" "-1" "--format=%D %h %ci")))
-                                (indent
-                                 13 (string-trim
-                                     (pp-to-string
-                                      (doom-package-build-recipe package))))))
-                      (`elpa
-                       (format "[M]ELPA %s" (doom--package-url package)))
-                      (`builtin "Built-in")
-                      (_ (abbreviate-file-name (symbol-file package))))
-                    "unknown")
-                "\n")
+        (pcase (doom-package-backend package)
+          (`straight
+           (insert "Straight\n")
+           (package--print-help-section "Pinned")
+           (insert (if-let (pin (plist-get (cdr (assq package doom-packages)) :pin))
+                       pin
+                     "unpinned")
+                   "\n")
+           (package--print-help-section "Build")
+           (insert (let ((default-directory (straight--repos-dir (symbol-name package))))
+                     (cdr
+                      (doom-call-process "git" "log" "-1" "--format=%D %h %ci")))
+                   "\n")
+           (let ((recipe (doom-package-build-recipe package)))
+             (insert (format! "%s\n"
+                              (indent 13
+                                      (string-trim (pp-to-string recipe)))))
 
-        (when (gethash (symbol-name package) straight--build-cache)
+             (package--print-help-section "Homepage")
+             (insert (doom--package-url package))))
+          (`elpa (insert "[M]ELPA " (doom--package-url package)))
+          (`builtin (insert "Built-in"))
+          (`other (insert
+                   (abbreviate-file-name
+                    (or (symbol-file package)
+                        (locate-library (symbol-name package))))))
+          (_ (insert "Not installed")))
+        (insert "\n")
+
+        (when-let
+            (modules
+             (if (gethash (symbol-name package) straight--build-cache)
+                 (doom-package-get package :modules)
+               (plist-get (cdr (assq package (doom-packages-list 'all)))
+                          :modules)))
           (package--print-help-section "Modules")
           (insert "Declared by the following Doom modules:\n")
-          (dolist (m (doom-package-get package :modules))
+          (dolist (m modules)
             (insert indent)
             (doom--help-package-insert-button
               (format "%s %s" (car m) (or (cdr m) ""))
@@ -614,17 +616,10 @@ config blocks in your private config."
     (recenter)))
 
 ;;;###autoload
-(defun doom/help-package-homepage (package)
-  "Open PACKAGE's repo or homepage in your browser."
-  (interactive (list (doom--package-list "Open package homepage: ")))
-  (browse-url (doom--package-url package)))
-
+(defalias 'doom/help-package-homepage #'straight-visit-package-website)
 
 (defun doom--help-search-prompt (prompt)
-  (let ((query
-         (if (use-region-p)
-             (buffer-substring-no-properties (region-beginning) (region-end))
-           (or (thing-at-point 'symbol t) ""))))
+  (let ((query (doom-thing-at-point-or-region)))
     (if (featurep 'counsel)
         query
       (read-string prompt query 'git-grep query))))

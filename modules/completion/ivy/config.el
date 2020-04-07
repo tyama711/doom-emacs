@@ -14,21 +14,6 @@ When 'everything, also preview virtual buffers")
   "A plist mapping ivy/counsel commands to commands that generate an editable
 results buffer.")
 
-(defvar +ivy-standard-search-fn
-  (if (featurep! +prescient)
-      #'+ivy-prescient-non-fuzzy
-    #'ivy--regex-plus)
-  "Function to use for non-fuzzy search commands.
-This uses the standard search algorithm ivy uses (or a variant of it).")
-
-(defvar +ivy-alternative-search-fn
-  (cond ((featurep! +prescient) #'ivy-prescient-re-builder)
-        ((featurep! +fuzzy)     #'ivy--regex-fuzzy)
-        ;; Ignore order for non-fuzzy searches by default
-        (#'ivy--regex-ignore-order))
-  "Function to use for fuzzy search commands.
-This uses a search algorithm other than ivy's default.")
-
 
 ;;
 ;;; Packages
@@ -36,15 +21,24 @@ This uses a search algorithm other than ivy's default.")
 (use-package! ivy
   :after-call pre-command-hook
   :init
-  (setq ivy-re-builders-alist
-        `((counsel-rg     . +ivy-standard-search)
-          (swiper         . +ivy-standard-search)
-          (swiper-isearch . +ivy-standard-search)
-          (t . +ivy-alternative-search))
-        ivy-more-chars-alist
-        '((counsel-rg . 1)
-          (counsel-search . 2)
-          (t . 3)))
+  (let ((standard-search-fn
+         (if (featurep! +prescient)
+             #'+ivy-prescient-non-fuzzy
+           #'ivy--regex-plus))
+        (alt-search-fn
+         (if (featurep! +fuzzy)
+             #'ivy--regex-fuzzy
+           ;; Ignore order for non-fuzzy searches by default
+           #'ivy--regex-ignore-order)))
+    (setq ivy-re-builders-alist
+          `((counsel-rg     . ,standard-search-fn)
+            (swiper         . ,standard-search-fn)
+            (swiper-isearch . ,standard-search-fn)
+            (t . ,alt-search-fn))
+          ivy-more-chars-alist
+          '((counsel-rg . 1)
+            (counsel-search . 2)
+            (t . 3))))
 
   (define-key!
     [remap switch-to-buffer]              #'+ivy/switch-buffer
@@ -105,19 +99,11 @@ evil-ex-specific constructs, so we disable it solely in evil-ex."
 
   (define-key! ivy-minibuffer-map
     "C-c C-e" #'+ivy/woccur
-    [remap doom/delete-backward-word] #'ivy-backward-kill-word)
+    [remap doom/delete-backward-word] #'ivy-backward-kill-word
+    "C-o" #'ivy-dispatching-done
+    "M-o" #'hydra-ivy/body)
 
-  (ivy-mode +1)
-
-  (use-package! ivy-hydra
-    :commands (ivy-dispatching-done ivy--matcher-desc ivy-hydra/body)
-    :init
-    (define-key! ivy-minibuffer-map
-      "C-o" #'ivy-dispatching-done
-      "M-o" #'hydra-ivy/body)
-    :config
-    ;; ivy-hydra rebinds this, so we have to do so again
-    (define-key ivy-minibuffer-map (kbd "M-o") #'hydra-ivy/body)))
+  (ivy-mode +1))
 
 
 (use-package! ivy-rich
@@ -179,26 +165,27 @@ evil-ex-specific constructs, so we disable it solely in evil-ex."
   (define-key!
     [remap apropos]                  #'counsel-apropos
     [remap bookmark-jump]            #'counsel-bookmark
+    [remap compile]                  #'+ivy/compile
+    [remap describe-bindings]        #'counsel-descbinds
     [remap describe-face]            #'counsel-faces
     [remap describe-function]        #'counsel-describe-function
     [remap describe-variable]        #'counsel-describe-variable
-    [remap describe-bindings]        #'counsel-descbinds
-    [remap set-variable]             #'counsel-set-variable
+    [remap evil-ex-registers]        #'counsel-evil-registers
+    [remap evil-show-marks]          #'counsel-mark-ring
     [remap execute-extended-command] #'counsel-M-x
     [remap find-file]                #'counsel-find-file
     [remap find-library]             #'counsel-find-library
-    [remap info-lookup-symbol]       #'counsel-info-lookup-symbol
     [remap imenu]                    #'counsel-imenu
-    [remap recentf-open-files]       #'counsel-recentf
-    [remap swiper]                   #'counsel-grep-or-swiper
-    [remap evil-ex-registers]        #'counsel-evil-registers
-    [remap evil-show-marks]          #'counsel-mark-ring
-    [remap yank-pop]                 #'counsel-yank-pop
+    [remap info-lookup-symbol]       #'counsel-info-lookup-symbol
     [remap load-theme]               #'counsel-load-theme
     [remap locate]                   #'counsel-locate
+    [remap org-set-tags-command]     #'counsel-org-tag
+    [remap projectile-compile-project] #'+ivy/project-compile
+    [remap recentf-open-files]       #'counsel-recentf
+    [remap set-variable]             #'counsel-set-variable
+    [remap swiper]                   #'counsel-grep-or-swiper
     [remap unicode-chars-list-chars] #'counsel-unicode-char
-    [remap compile]                    #'+ivy/compile
-    [remap projectile-compile-project] #'+ivy/project-compile)
+    [remap yank-pop]                 #'counsel-yank-pop)
   :config
   (set-popup-rule! "^\\*ivy-occur" :size 0.35 :ttl 0 :quit nil)
 
@@ -230,6 +217,9 @@ evil-ex-specific constructs, so we disable it solely in evil-ex."
   (after! savehist
     ;; Persist `counsel-compile' history
     (add-to-list 'savehist-additional-variables 'counsel-compile-history))
+
+  ;; `counsel-imenu' -- no sorting for imenu. Sort it by appearance in page.
+  (add-to-list 'ivy-sort-functions-alist '(counsel-imenu))
 
   ;; `counsel-locate'
   (when IS-MAC
@@ -266,10 +256,10 @@ evil-ex-specific constructs, so we disable it solely in evil-ex."
     "Change `counsel-file-jump' to use fd or ripgrep, if they are available."
     :override #'counsel--find-return-list
     (cl-destructuring-bind (find-program . args)
-        (cond ((executable-find "fd")
-               (cons "fd" (list "-t" "f" "-E" ".git")))
+        (cond ((executable-find doom-projectile-fd-binary)
+               (cons doom-projectile-fd-binary (list "-t" "f" "-E" ".git")))
               ((executable-find "rg")
-               (cons "rg" (list "--files" "--hidden" "--no-messages")))
+               (split-string (format counsel-rg-base-command "--files --no-messages") " " t))
               ((cons find-program args)))
       (unless (listp args)
         (user-error "`counsel-file-jump-args' is a list now, please customize accordingly."))
@@ -277,7 +267,7 @@ evil-ex-specific constructs, so we disable it solely in evil-ex."
        (cons find-program args)
        (lambda ()
          (goto-char (point-min))
-         (let ((offset (if (member find-program '("fd" "rg")) 0 2))
+         (let ((offset (if (member find-program (list "rg" doom-projectile-fd-binary)) 0 2))
                files)
            (while (< (point) (point-max))
              (push (buffer-substring
@@ -305,7 +295,10 @@ evil-ex-specific constructs, so we disable it solely in evil-ex."
         #'+ivy/projectile-find-file)
 
   ;; no highlighting visited files; slows down the filtering
-  (ivy-set-display-transformer #'counsel-projectile-find-file nil))
+  (ivy-set-display-transformer #'counsel-projectile-find-file nil)
+
+  (when (featurep! +prescient)
+    (setq counsel-projectile-sort-files t)))
 
 
 (use-package! wgrep
@@ -349,11 +342,13 @@ evil-ex-specific constructs, so we disable it solely in evil-ex."
   (setq prescient-filter-method
         (if (featurep! +fuzzy)
             '(literal regexp initialism fuzzy)
-          '(literal regexp initialism))
-        ivy-prescient-enable-filtering nil  ; we do this ourselves
-        ivy-prescient-retain-classic-highlighting t)
-
+          '(literal regexp initialism)))
   :config
+  (setq ivy-prescient-sort-commands
+        '(:not swiper swiper-isearch ivy-switch-buffer counsel-grep
+               counsel-git-grep counsel-ag counsel-rg counsel-imenu
+               counsel-yank-pop counsel-recentf counsel-buffer-or-recentf)
+        ivy-prescient-retain-classic-highlighting t)
   (defun +ivy-prescient-non-fuzzy (str)
     (let ((prescient-filter-method '(literal regexp)))
       (ivy-prescient-re-builder str)))

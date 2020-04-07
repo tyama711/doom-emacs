@@ -25,8 +25,8 @@ buffer.")
     ("d"  "dired $1")
     ("bd" "eshell-up $1")
     ("rg" "rg --color=always $*")
-    ("l"  "ls -lh")
-    ("ll" "ls -lah")
+    ("l"  "ls -lh $*")
+    ("ll" "ls -lah $*")
     ("clear" "clear-scrollback")) ; more sensible than default
   "An alist of default eshell aliases, meant to emulate useful shell utilities,
 like fasd and bd. Note that you may overwrite these in your
@@ -132,6 +132,8 @@ You should use `set-eshell-alias!' to change this.")
             :n "C"       #'+eshell/evil-change-line
             :n "d"       #'+eshell/evil-delete
             :n "D"       #'+eshell/evil-delete-line
+            :ni "C-j"    #'eshell-next-matching-input-from-input
+            :ni "C-k"    #'eshell-previous-matching-input-from-input
             :ig "C-d"    #'+eshell/quit-or-delete-char
             "TAB"   #'+eshell/pcomplete
             [tab]   #'+eshell/pcomplete
@@ -157,6 +159,7 @@ You should use `set-eshell-alias!' to change this.")
     (defun +eshell-init-company-h ()
       (when (featurep! :completion company)
         (company-mode +1)
+        (setq-local company-idle-delay nil)
         (setq-local company-backends '(company-pcomplete))
         (setq-local company-frontends (cons 'company-tng-frontend company-frontends))
         (when (bound-and-true-p evil-local-mode)

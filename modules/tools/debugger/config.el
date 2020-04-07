@@ -7,7 +7,7 @@
     (realgud:kshdb     :modes (sh-mode))
     (realgud:pdb       :modes (python-mode))
     (realgud:perldb    :modes (perl-mode perl6-mode))
-    (realgud:rdebug    :modes (ruby-mode enh-ruby-mode))
+    (realgud:rdebug    :modes (ruby-mode))
     (realgud:remake)
     (realgud:trepan    :modes (perl-mode perl6-mode))
     (realgud:trepan2   :modes (python-mode))
@@ -19,6 +19,11 @@
 
 ;;
 ;;; Packages
+
+;;;###package gdb
+(setq gdb-show-main t
+      gdb-many-windows t)
+
 
 (use-package! dap-mode
   :when (featurep! :tools lsp)
@@ -35,7 +40,7 @@
                     ((:lang . java) lsp-java dap-java)
                     ((:lang . php) php-mode dap-php)
                     ((:lang . python) python dap-python)
-                    ((:lang . ruby) enh-ruby-mode dap-ruby)
+                    ((:lang . ruby) ruby-mode dap-ruby)
                     ((:lang . rust) rust-mode dap-lldb)))
     (when (doom-module-p (caar module) (cdar module) '+lsp)
       (with-eval-after-load (nth 1 module)
@@ -105,7 +110,7 @@
                    (if (boundp 'starting-directory)
                        (realgud-cmdbuf-info-starting-directory= starting-directory))
                    (set minibuffer-history-var
-                        (cl-remove-duplicates (cons cmd-str minibuffer-history)
+                        (cl-remove-duplicates (cons cmd-str (eval minibuffer-history-var))
                                               :from-end t))))))
             (t
              (if cmd-buf (switch-to-buffer cmd-buf))

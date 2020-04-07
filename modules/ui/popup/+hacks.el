@@ -26,6 +26,15 @@
 ;;
 ;;; Core functions
 
+(defadvice! +popup--make-case-sensitive-a (orig-fn &rest args)
+  "Make regexps in `display-buffer-alist' case-sensitive.
+
+To reduce fewer edge cases and improve performance when `display-buffer-alist'
+grows larger."
+  :around #'display-buffer-assq-regexp
+  (let (case-fold-search)
+    (apply orig-fn args)))
+
 ;; Don't try to resize popup windows
 (advice-add #'balance-windows :around #'+popup-save-a)
 
@@ -220,12 +229,6 @@ the command buffer."
       (select-window win))))
 
 
-;;;###package neotree
-(after! neotree
-  (advice-add #'neo-util--set-window-width :override #'ignore)
-  (advice-remove #'balance-windows #'ad-Advice-balance-windows))
-
-
 ;;;###package org
 (after! org
   ;; Org has a scorched-earth window management policy I'm not fond of. i.e. it
@@ -240,6 +243,8 @@ the command buffer."
               org-fast-todo-selection)
     (if +popup-mode
         (cl-letf (((symbol-function #'delete-other-windows)
+                   (symbol-function #'ignore))
+                  ((symbol-function #'delete-window)
                    (symbol-function #'ignore)))
           (apply orig-fn args))
       (apply orig-fn args)))
@@ -270,7 +275,18 @@ Ugh, such an ugly hack."
     :around #'org-switch-to-buffer-other-window
     (if +popup-mode
         (pop-to-buffer buf nil norecord)
-      (funcall orig-fn buf norecord))))
+      (funcall orig-fn buf norecord)))
+
+  ;; HACK `pop-to-buffer-same-window' consults `display-buffer-alist', which is
+  ;;      what our popup manager uses to manage popup windows. However,
+  ;;      `org-src-switch-to-buffer' already does its own window management
+  ;;      prior to calling `pop-to-buffer-same-window', so there's no need to
+  ;;      _then_ hand off the buffer to the pop up manager.
+  (defadvice! +popup--org-src-switch-to-buffer-a (orig-fn &rest args)
+    :around #'org-src-switch-to-buffer
+    (cl-letf (((symbol-function #'pop-to-buffer-same-window)
+               (symbol-function #'switch-to-buffer)))
+      (apply orig-fn args))))
 
 
 ;;;###package persp-mode

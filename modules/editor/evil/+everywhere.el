@@ -11,8 +11,8 @@
 ;;    their changes will override evil-collection's.
 ;; 3. Ideally, we'd do away with evil-collection entirely. It changes too often,
 ;;    introduces breaking bugs too frequently, and I don't agree with all their
-;;    design choices. Regardless, it does mork than it causes trouble, so it may
-;;    be here to stay.
+;;    design choices. Regardless, it does more good than trouble, so it may be
+;;    here to stay.
 ;; 4. Adds `+evil-collection-disabled-list', to make it easier for users to
 ;;    disable modules, and to reduce the effort required to maintain our copy of
 ;;    `evil-collection-list' (now I can just copy it from time to time).
@@ -35,7 +35,8 @@
     package-menu
     ruby-mode
     simple
-    slime)
+    slime
+    lispy)
   "A list of `evil-collection' modules to ignore. See the definition of this
 variable for an explanation of the defaults (in comments). See
 `evil-collection-mode-list' for a list of available options.")
@@ -81,6 +82,7 @@ variable for an explanation of the defaults (in comments). See
     (custom cus-edit)
     cus-theme
     daemons
+    dashboard
     deadgrep
     debbugs
     debug
@@ -194,6 +196,7 @@ variable for an explanation of the defaults (in comments). See
     which-key
     woman
     xref
+    xwidget
     youtube-dl
     (ztree ztree-diff)))
 
@@ -227,7 +230,7 @@ and complains if a module is loaded too early (during startup)."
 (add-transient-hook! 'emacs-lisp-mode
   (+evil-collection-init 'elisp-mode))
 (add-transient-hook! 'occur-mode
-  (+evil-collection-init 'replace))
+  (+evil-collection-init 'occur))
 
 (evil-define-key* 'normal process-menu-mode-map
   "q" #'kill-current-buffer

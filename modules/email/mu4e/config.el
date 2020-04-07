@@ -60,11 +60,7 @@
   (setq mail-user-agent 'mu4e-user-agent)
 
   ;; Use fancy icons
-  (setq mu4e-headers-has-child-prefix '("+" . "")
-        mu4e-headers-empty-parent-prefix '("-" . "")
-        mu4e-headers-first-child-prefix '("\\" . "")
-        mu4e-headers-duplicate-prefix '("=" . "")
-        mu4e-headers-default-prefix '("|" . "")
+  (setq mu4e-use-fancy-chars t
         mu4e-headers-draft-mark '("D" . "")
         mu4e-headers-flagged-mark '("F" . "")
         mu4e-headers-new-mark '("N" . "")
@@ -91,22 +87,11 @@
   (defadvice! +mu4e--refresh-current-view-a (&rest _)
     :after #'mu4e-mark-execute-all (mu4e-headers-rerun-search))
 
-  (when (featurep! :tools flyspell)
-    (add-hook 'mu4e-compose-mode-hook #'flyspell-mode))
-
   ;; Wrap text in messages
   (setq-hook! 'mu4e-view-mode-hook truncate-lines nil)
 
   (when (fboundp 'imagemagick-register-types)
     (imagemagick-register-types))
-
-  (set-evil-initial-state!
-    '(mu4e-main-mode
-      mu4e-view-mode
-      mu4e-headers-mode
-      mu4e-compose-mode
-      mu4e~update-mail-mode)
-    'normal)
 
   (map! :localleader
         :map mu4e-compose-mode-map
@@ -114,13 +99,6 @@
         :desc "kill buffer"   "d" #'message-kill-buffer
         :desc "save draft"    "S" #'message-dont-send
         :desc "attach"        "a" #'mail-add-attachment))
-
-
-(use-package! mu4e-maildirs-extension
-  :after mu4e
-  :config
-  (mu4e-maildirs-extension)
-  (setq mu4e-maildirs-extension-title nil))
 
 
 (use-package! org-mu4e

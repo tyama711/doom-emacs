@@ -13,8 +13,8 @@
 
 (defconst doom-obsolete-modules
   '((:feature (version-control (:emacs vc) (:ui vc-gutter))
-              (spellcheck (:tools flyspell))
-              (syntax-checker (:tools flycheck))
+              (spellcheck (:checkers spell))
+              (syntax-checker (:checkers syntax))
               (evil (:editor evil))
               (snippets (:editor snippets))
               (file-templates (:editor file-templates))
@@ -24,7 +24,9 @@
               (debugger (:tools debugger)))
     (:tools (rotate-text (:editor rotate-text))
             (vterm (:term vterm))
-            (password-store (:tools pass)))
+            (password-store (:tools pass))
+            (flycheck (:checkers syntax))
+            (flyspell (:checkers spell)))
     (:emacs (electric-indent (:emacs electric))
             (hideshow (:editor fold))
             (eshell (:term eshell))
@@ -40,7 +42,7 @@
 Each entry is a three-level tree. For example:
 
   (:feature (version-control (:emacs vc) (:ui vc-gutter))
-            (spellcheck (:tools flyspell))
+            (spellcheck (:checkers spell))
             (syntax-checker (:tools flycheck)))
 
 This marks :feature version-control, :feature spellcheck and :feature
@@ -76,6 +78,7 @@ non-nil."
   (when (or force-p (not doom-init-modules-p))
     (setq doom-init-modules-p t
           doom-modules nil)
+    (load custom-file 'noerror 'nomessage)
     (when (load! "init" doom-private-dir t)
       (when doom-modules
         (maphash (lambda (key plist)
@@ -101,11 +104,10 @@ non-nil."
 (defun doom-module-p (category module &optional flag)
   "Returns t if CATEGORY MODULE is enabled (ie. present in `doom-modules')."
   (declare (pure t) (side-effect-free t))
-  (let ((plist (gethash (cons category module) doom-modules)))
-    (and plist
-         (or (null flag)
-             (memq flag (plist-get plist :flags)))
-         t)))
+  (when-let (plist (gethash (cons category module) doom-modules))
+    (or (null flag)
+        (and (memq flag (plist-get plist :flags))
+             t))))
 
 (defun doom-module-get (category module &optional property)
   "Returns the plist for CATEGORY MODULE. Gets PROPERTY, specifically, if set."
@@ -537,56 +539,6 @@ CATEGORY and MODULE can be omitted When this macro is used from inside a module
                          category module flag (file!)))
                 (memq category (doom-module-get (car module) (cdr module) :flags)))))
        t))
-
-(defmacro after! (package &rest body)
-  "Evaluate BODY after PACKAGE have loaded.
-
-PACKAGE is a symbol or list of them. These are package names, not modes,
-functions or variables. It can be:
-
-- An unquoted package symbol (the name of a package)
-    (after! helm BODY...)
-- An unquoted list of package symbols (i.e. BODY is evaluated once both magit
-  and git-gutter have loaded)
-    (after! (magit git-gutter) BODY...)
-- An unquoted, nested list of compound package lists, using any combination of
-  :or/:any and :and/:all
-    (after! (:or package-a package-b ...)  BODY...)
-    (after! (:and package-a package-b ...) BODY...)
-    (after! (:and package-a (:or package-b package-c) ...) BODY...)
-  Without :or/:any/:and/:all, :and/:all are implied.
-
-This is a wrapper around `eval-after-load' that:
-
-1. Suppresses warnings for disabled packages at compile-time
-2. No-ops for package that are disabled by the user (via `package!')
-3. Supports compound package statements (see below)
-4. Prevents eager expansion pulling in autoloaded macros all at once"
-  (declare (indent defun) (debug t))
-  (if (symbolp package)
-      (unless (memq package (bound-and-true-p doom-disabled-packages))
-        (list (if (or (not (bound-and-true-p byte-compile-current-file))
-                      (require package nil 'noerror))
-                  #'progn
-                #'with-no-warnings)
-              (let ((body (macroexp-progn body)))
-                `(if (featurep ',package)
-                     ,body
-                   ;; We intentionally avoid `with-eval-after-load' to prevent
-                   ;; eager macro expansion from pulling (or failing to pull) in
-                   ;; autoloaded macros/packages.
-                   (eval-after-load ',package ',body)))))
-    (let ((p (car package)))
-      (cond ((not (keywordp p))
-             `(after! (:and ,@package) ,@body))
-            ((memq p '(:or :any))
-             (macroexp-progn
-              (cl-loop for next in (cdr package)
-                       collect `(after! ,next ,@body))))
-            ((memq p '(:and :all))
-             (dolist (next (cdr package))
-               (setq body `((after! ,next ,@body))))
-             (car body))))))
 
 ;; DEPRECATED
 (defmacro def-package! (&rest args)

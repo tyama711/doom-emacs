@@ -13,11 +13,23 @@
 
 ;;;###package clojure-mode
 (add-hook 'clojure-mode-hook #'rainbow-delimiters-mode)
+(when (featurep! +lsp)
+  (add-hook! '(clojure-mode-local-vars-hook
+               clojurec-mode-local-vars-hook
+               clojurescript-mode-local-vars-hook)
+    (defun +clojure-disable-lsp-indentation-h ()
+      (setq-local lsp-enable-indentation nil))
+    #'lsp!)
+  (after! lsp-clojure
+    (dolist (m '(clojure-mode
+                 clojurec-mode
+                 clojurescript-mode
+                 clojurex-mode))
+      (add-to-list 'lsp-language-id-configuration (cons m "clojure")))))
 
 
 (use-package! cider
-  ;; NOTE: if you don't have an org directory set (the dir doesn't exist), cider
-  ;; jack in won't work.
+  ;; NOTE if `org-directory' doesn't exist, `cider-jack' in won't work
   :hook (clojure-mode-local-vars . cider-mode)
   :init
   (after! clojure-mode
@@ -112,7 +124,7 @@
             (:prefix ("r" . "repl")
               "n" #'cider-repl-set-ns
               "q" #'cider-quit
-              "r" #'cider-refresh
+              "r" #'cider-ns-refresh
               "R" #'cider-restart
               "b" #'cider-switch-to-repl-buffer
               "B" #'+clojure/cider-switch-to-repl-buffer-and-switch-ns
@@ -157,6 +169,6 @@
         :desc "refactor" "R" #'hydra-cljr-help-menu/body))
 
 
-(use-package! flycheck-joker
-  :when (featurep! :tools flycheck)
+(use-package! flycheck-clj-kondo
+  :when (featurep! :checkers syntax)
   :after flycheck)

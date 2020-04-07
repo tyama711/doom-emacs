@@ -43,7 +43,7 @@ If ARG (universal argument), runs `compile' from the current directory."
   (unless (bound-and-true-p lsp-mode)
     (user-error "Not in an LSP buffer"))
   (call-interactively
-   (if (use-region-p)
+   (if (doom-region-active-p)
        #'lsp-format-region
      #'lsp-format-buffer)))
 
@@ -53,5 +53,5 @@ If ARG (universal argument), runs `compile' from the current directory."
   (interactive)
   (server-force-delete)
   (while (server-running-p)
-    (sit-for 1))
+    (sleep-for 1))
   (server-start))

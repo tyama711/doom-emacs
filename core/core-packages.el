@@ -21,7 +21,7 @@
 ;;
 ;; + `bin/doom install`: a wizard that guides you through setting up Doom and
 ;;   your private config for the first time.
-;; + `bin/doom refresh`: your go-to command for making sure Doom is in optimal
+;; + `bin/doom sync`: your go-to command for making sure Doom is in optimal
 ;;   condition. It ensures all unneeded packages are removed, all needed ones
 ;;   are installed, and all metadata associated with them is generated.
 ;; + `bin/doom upgrade`: upgrades Doom Emacs and your packages to the latest
@@ -42,14 +42,6 @@
   "A list of enabled packages. Each element is a sublist, whose CAR is the
 package's name as a symbol, and whose CDR is the plist supplied to its
 `package!' declaration. Set by `doom-initialize-packages'.")
-
-(defvar doom-pinned-packages nil
-  "An alist mapping package names to commit hashes; both strings.
-
-We avoid straight's lockfiles because we want to pin packages straight from
-their `package!' declarations, which is simpler than lockfiles, where version
-management would be done in a whole new file that users shouldn't have to deal
-with.")
 
 (defvar doom-core-packages '(straight use-package)
   "A list of packages that must be installed (and will be auto-installed if
@@ -124,76 +116,11 @@ missing) and shouldn't be deleted.")
       ;; We handle it ourselves
       straight-fix-org nil)
 
-;;; Getting straight to behave in batch mode
-(when noninteractive
-  ;; HACK Remove dired & magit options from prompt, since they're inaccessible
-  ;;      in noninteractive sessions.
-  (advice-add #'straight-vc-git--popup-raw :override #'straight--popup-raw))
-
-;; HACK Replace GUI popup prompts (which hang indefinitely in tty Emacs) with
-;;      simple prompts.
-(defadvice! doom--straight-fallback-to-y-or-n-prompt-a (orig-fn &optional prompt)
-  :around #'straight-are-you-sure
-  (if noninteractive
-      (y-or-n-p (format! "%s" (or prompt "")))
-    (funcall orig-fn prompt)))
-
-(defadvice! doom--straight-fallback-to-tty-prompt-a (orig-fn prompt actions)
-  "Modifies straight to prompt on the terminal when in noninteractive sessions."
-  :around #'straight--popup-raw
-  (if (not noninteractive)
-      (funcall orig-fn prompt actions)
-    ;; We can't intercept C-g, so no point displaying any options for this key
-    ;; Just use C-c
-    (delq! "C-g" actions 'assoc)
-    ;; HACK These are associated with opening dired or magit, which isn't
-    ;;      possible in tty Emacs, so...
-    (delq! "e" actions 'assoc)
-    (delq! "g" actions 'assoc)
-    (let ((options (list (lambda ()
-                           (let ((doom-format-indent 0))
-                             (terpri)
-                             (print! (error "Aborted")))
-                           (kill-emacs)))))
-      (print! (start "%s") (red prompt))
-      (terpri)
-      (print-group!
-       (print-group!
-        (print! " 1) Abort")
-        (dolist (action actions)
-          (cl-destructuring-bind (_key desc func) action
-            (when desc
-              (push func options)
-              (print! "%2s) %s" (length options) desc)))))
-       (terpri)
-       (let ((options (nreverse options))
-             answer fn)
-         (while
-             (not
-              (setq
-               fn (ignore-errors
-                    (nth (1- (setq answer
-                                   (read-number
-                                    (format! "How to proceed? (%s) "
-                                             (mapconcat #'number-to-string
-                                                        (number-sequence 1 (length options))
-                                                        ", ")))))
-                         options))))
-           (print! (warn "%s is not a valid answer, try again.") answer))
-         (funcall fn))))))
-
-(defadvice! doom--straight-respect-print-indent-a (args)
-  :filter-args #'straight-use-package
-  (cl-destructuring-bind
-      (melpa-style-recipe &optional no-clone no-build cause interactive)
-      args
-    (list melpa-style-recipe no-clone no-build
-          (if (and (not cause)
-                   (boundp 'doom-format-indent)
-                   (> doom-format-indent 0))
-              (make-string (1- (or doom-format-indent 1)) 32)
-            cause)
-          interactive)))
+(defadvice! doom--read-pinned-packages-a (orig-fn &rest args)
+  "Read from `doom-pinned-packages' on top of straight's lockfiles."
+  :around #'straight--lockfile-read-all
+  (append (apply orig-fn args)
+          (doom-package-pinned-list)))
 
 
 ;;
@@ -216,19 +143,7 @@ necessary package metadata is initialized and available for them."
   (when (or force-p (not doom-packages))
     (doom-log "Initializing straight")
     (setq doom-init-packages-p t)
-    (unless (fboundp 'straight--reset-caches)
-      (doom-ensure-straight)
-      (require 'straight))
-    (straight--reset-caches)
-    (setq straight-recipe-repositories nil
-          straight-recipe-overrides nil)
-    (mapc #'straight-use-recipes doom-core-package-sources)
-    (straight-register-package
-     `(straight :type git :host github
-                :repo ,(format "%s/straight.el" straight-repository-user)
-                :files ("straight*.el")
-                :branch ,straight-repository-branch
-                :no-byte-compile t))
+    (doom-ensure-straight)
     (mapc #'straight-use-package doom-core-packages)
     (doom-log "Initializing doom-packages")
     (setq doom-disabled-packages nil
@@ -239,11 +154,6 @@ necessary package metadata is initialized and available for them."
         (with-plist! (cdr package) (recipe modules disable ignore pin)
           (if ignore
               (doom-log "Ignoring package %S" name)
-            (when pin
-              (doom-log "Pinning package %S to %S" name pin)
-              (setf (alist-get (symbol-name name) doom-pinned-packages
-                               nil nil #'equal)
-                    pin))
             (if (not disable)
                 (with-demoted-errors "Package error: %s"
                   (when recipe
@@ -260,24 +170,35 @@ necessary package metadata is initialized and available for them."
 
 (defun doom-ensure-straight ()
   "Ensure `straight' is installed and was compiled with this version of Emacs."
-  (defvar bootstrap-version)
-  (let* (;; Force straight to install into ~/.emacs.d/.local/straight instead of
-         ;; ~/.emacs.d/straight by pretending `doom-local-dir' is our .emacs.d.
-         (user-emacs-directory straight-base-dir)
-         (bootstrap-file (doom-path straight-base-dir "straight/repos/straight.el/straight.el"))
-         (bootstrap-version 5))
-    (make-directory (doom-path straight-base-dir "straight/build") 'parents)
-    (unless (featurep 'straight)
-      (unless (or (require 'straight nil t)
-                  (file-readable-p bootstrap-file))
-        (with-current-buffer
-            (url-retrieve-synchronously
-             (format "https://raw.githubusercontent.com/raxod502/straight.el/%s/install.el"
-                     straight-repository-branch)
-             'silent 'inhibit-cookies)
-          (goto-char (point-max))
-          (eval-print-last-sexp)))
-      (load bootstrap-file nil t))))
+  (unless (fboundp 'straight--reset-caches)
+    (defvar bootstrap-version)
+    (let* (;; Force straight to install into ~/.emacs.d/.local/straight instead of
+           ;; ~/.emacs.d/straight by pretending `doom-local-dir' is our .emacs.d.
+           (user-emacs-directory straight-base-dir)
+           (bootstrap-file (doom-path straight-base-dir "straight/repos/straight.el/straight.el"))
+           (bootstrap-version 5))
+      (make-directory (doom-path straight-base-dir "straight/build") 'parents)
+      (or (require 'straight nil t)
+          (file-readable-p bootstrap-file)
+          (with-current-buffer
+              (url-retrieve-synchronously
+               (format "https://raw.githubusercontent.com/raxod502/straight.el/%s/install.el"
+                       straight-repository-branch)
+               'silent 'inhibit-cookies)
+            (goto-char (point-max))
+            (eval-print-last-sexp)))
+        (load bootstrap-file nil t))
+    (require 'straight))
+  (straight--reset-caches)
+  (setq straight-recipe-repositories nil
+        straight-recipe-overrides nil)
+  (mapc #'straight-use-recipes doom-core-package-sources)
+  (straight-register-package
+   `(straight :type git :host github
+              :repo ,(format "%s/straight.el" straight-repository-user)
+              :files ("straight*.el")
+              :branch ,straight-repository-branch
+              :no-byte-compile t)))
 
 
 ;;
@@ -305,7 +226,6 @@ Accepts the following properties:
  :ignore FORM
    Do not install this package.
  :pin STR|nil
-   (NOT IMPLEMENTED YET)
    Pin this package to commit hash STR. Setting this to nil will unpin this
    package if previously pinned.
  :built-in BOOL|'prefer
@@ -344,7 +264,8 @@ elsewhere."
      (condition-case e
          (when-let (recipe (plist-get plist :recipe))
            (cl-destructuring-bind
-               (&key local-repo _files _flavor _no-build
+               (&key local-repo _files _flavor
+                     _no-build _no-byte-compile _no-autoloads
                      _type _repo _host _branch _remote _nonrecursive _fork _depth)
                recipe
              ;; Expand :local-repo from current directory
@@ -367,6 +288,44 @@ Only use this macro in a module's (or your private) packages.el file."
   (macroexp-progn
    (cl-loop for p in packages
             collect `(package! ,p :disable t))))
+
+(defmacro unpin! (&rest targets)
+  "Unpin packages in TARGETS.
+
+This unpins packages, so that 'doom upgrade' downloads their latest version. It
+can be used one of five ways:
+
++ To disable pinning wholesale: (unpin! t)
++ To unpin individual packages: (unpin! packageA packageB ...)
++ To unpin all packages in a group of modules: (unpin! :lang :tools ...)
++ To unpin packages in individual modules:
+    (unpin! (:lang python javascript) (:tools docker))
+
+Or any combination of the above.
+
+This macro should only be used from the user's private packages.el. No module
+should use it!"
+  (if (memq t targets)
+      `(mapc (doom-rpartial #'doom-package-set :unpin t)
+             (mapcar #'car doom-packages))
+    (let (forms)
+      (dolist (target targets)
+        (cl-check-type target (or symbol keyword list))
+        (cond
+         ((symbolp target)
+          (push `(doom-package-set ',target :unpin t) forms))
+         ((or (keywordp target)
+              (listp target))
+          (cl-destructuring-bind (category . modules) (doom-enlist target)
+            (dolist (pkg doom-packages)
+              (let ((pkg-modules (plist-get (cdr pkg) :modules)))
+                (and (assq category pkg-modules)
+                     (or (null modules)
+                         (cl-loop for module in modules
+                                  if (member (cons category module) pkg-modules)
+                                  return t))
+                     (push `(doom-package-set ',(car pkg) :unpin t) forms))))))))
+      (macroexp-progn forms))))
 
 (provide 'core-packages)
 ;;; core-packages.el ends here

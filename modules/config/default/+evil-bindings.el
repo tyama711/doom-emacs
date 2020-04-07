@@ -6,10 +6,7 @@
   ;; Minibuffer
   (define-key! evil-ex-completion-map
     "C-a" #'evil-beginning-of-line
-    "C-b" #'evil-backward-char
-    "C-s" (if (featurep! :completion ivy)
-              #'counsel-minibuffer-history
-            #'helm-minibuffer-history))
+    "C-b" #'evil-backward-char)
 
   (define-key! :keymaps +default-minibuffer-maps
     [escape] #'abort-recursive-edit
@@ -42,19 +39,11 @@
                  (and (featurep! :completion company +tng)
                       (+company-has-completion-p))
                  #'+company/complete)
-      :n [tab] (general-predicate-dispatch nil
-                 (and (featurep! :editor fold)
-                      (save-excursion (end-of-line) (invisible-p (point))))
-                 #'+fold/toggle
-                 (fboundp 'evil-jump-item)
-                 #'evil-jump-item)
       :v [tab] (general-predicate-dispatch nil
                  (and (bound-and-true-p yas-minor-mode)
                       (or (eq evil-visual-selection 'line)
                           (not (memq (char-after) (list ?\( ?\[ ?\{ ?\} ?\] ?\))))))
-                 #'yas-insert-snippet
-                 (fboundp 'evil-jump-item)
-                 #'evil-jump-item)
+                 #'yas-insert-snippet)
 
       ;; Smarter newlines
       :i [remap newline] #'newline-and-indent  ; auto-indent on newline
@@ -77,10 +66,9 @@
         :n "q"    #'kill-current-buffer)
 
       :m "gs"     #'+evil/easymotion  ; lazy-load `evil-easymotion'
-      (:after org
-        :map org-mode-map
-        :prefix "<easymotion>"
-        "h" #'+org/goto-visible)
+      (:after (evil-org evil-easymotion)
+        :map evil-org-mode-map
+        :m "gsh" #'+org/goto-visible)
 
       (:when (featurep! :editor multiple-cursors)
         :prefix "gz"
@@ -333,6 +321,8 @@
         :desc "Kill buffer"                 "k"   #'kill-current-buffer
         :desc "Kill all buffers"            "K"   #'doom/kill-all-buffers
         :desc "Switch to last buffer"       "l"   #'evil-switch-to-windows-last-buffer
+        :desc "Set bookmark"                "m"   #'bookmark-set
+        :desc "Delete bookmark"             "M"   #'bookmark-delete
         :desc "Next buffer"                 "n"   #'next-buffer
         :desc "New empty buffer"            "N"   #'evil-buffer-new
         :desc "Kill other buffers"          "O"   #'doom/kill-other-buffers
@@ -348,6 +338,7 @@
 
       ;;; <leader> c --- code
       (:prefix-map ("c" . "code")
+        :desc "LSP Execute code action"               "a"   #'lsp-execute-code-action
         :desc "Compile"                               "c"   #'compile
         :desc "Recompile"                             "C"   #'recompile
         :desc "Jump to definition"                    "d"   #'+lookup/definition
@@ -369,7 +360,7 @@
         :desc "Delete trailing whitespace"            "w"   #'delete-trailing-whitespace
         :desc "Delete trailing newlines"              "W"   #'doom/delete-trailing-newlines
         :desc "List errors"                           "x"   #'flymake-show-diagnostics-buffer
-        (:when (featurep! :tools flycheck)
+        (:when (featurep! :checkers syntax)
           :desc "List errors"                         "x"   #'flycheck-list-errors))
 
       ;;; <leader> f --- file
@@ -393,13 +384,17 @@
         :desc "Sudo this file"              "U"   #'doom/sudo-this-file
         :desc "Yank filename"               "y"   #'+default/yank-buffer-filename)
 
-      ;;; <leader> g --- git
+      ;;; <leader> g --- git/version control
       (:prefix-map ("g" . "git")
-        :desc "Git revert file"             "R"   #'vc-revert
-        :desc "Copy link to remote"         "y"   #'+vc/browse-at-remote-kill-file-or-region
+        :desc "Revert file"                 "R"   #'vc-revert
+        :desc "Copy link to remote"         "y"   #'browse-at-remote-kill
         :desc "Copy link to homepage"       "Y"   #'+vc/browse-at-remote-kill-homepage
+        (:when (featurep! :ui hydra)
+          :desc "SMerge"                    "m"   #'+vc/smerge-hydra/body)
         (:when (featurep! :ui vc-gutter)
-          :desc "Git revert hunk"           "r"   #'git-gutter:revert-hunk
+          (:when (featurep! :ui hydra)
+            :desc "VCGutter"                "."   #'+vc/gutter-hydra/body)
+          :desc "Revert hunk"               "r"   #'git-gutter:revert-hunk
           :desc "Git stage hunk"            "s"   #'git-gutter:stage-hunk
           :desc "Git time machine"          "t"   #'git-timemachine-toggle
           :desc "Jump to next hunk"         "]"   #'git-gutter:next-hunk
@@ -423,7 +418,7 @@
             :desc "Find issue"                "i"   #'forge-visit-issue
             :desc "Find pull request"         "p"   #'forge-visit-pullreq)
           (:prefix ("o" . "open in browser")
-            :desc "Browse file or region"     "o"   #'+vc/browse-at-remote-file-or-region
+            :desc "Browse file or region"     "o"   #'browse-at-remote
             :desc "Browse homepage"           "h"   #'+vc/browse-at-remote-homepage
             :desc "Browse remote"             "r"   #'forge-browse-remote
             :desc "Browse commit"             "c"   #'forge-browse-commit
@@ -477,6 +472,20 @@
         :desc "View search"                  "v" #'org-search-view
         :desc "Org export to clipboard"        "y" #'+org/export-to-clipboard
         :desc "Org export to clipboard as RTF" "Y" #'+org/export-to-clipboard-as-rich-text
+
+        (:when (featurep! :lang org +roam)
+          (:prefix ("r" . "roam")
+            :desc "Switch to buffer" "b" #'org-roam-switch-to-buffer
+            :desc "Org Roam Capture" "c" #'org-roam-capture
+            :desc "Find file"        "f" #'org-roam-find-file
+            :desc "Show graph"       "g" #'org-roam-graph-show
+            :desc "Insert"           "i" #'org-roam-insert
+            :desc "Org Roam"         "r" #'org-roam
+            (:prefix ("d" . "by date")
+              :desc "Arbitrary date" "d" #'org-roam-date
+              :desc "Today"          "t" #'org-roam-today
+              :desc "Tomorrow"       "m" #'org-roam-tomorrow
+              :desc "Yesterday"      "y" #'org-roam-yesterday)))
 
         (:when (featurep! :lang org +journal)
           (:prefix ("j" . "journal")
@@ -535,6 +544,7 @@
         :desc "Compile in project"           "c" #'projectile-compile-project
         :desc "Repeat last command"          "C" #'projectile-repeat-last-command
         :desc "Remove known project"         "d" #'projectile-remove-known-project
+        :desc "Discover projects in folder"  "D" #'+default/discover-projects
         :desc "Edit project .dir-locals"     "e" #'projectile-edit-dir-locals
         :desc "Find file in project"         "f" #'projectile-find-file
         :desc "Find file in other project"   "F" #'doom/find-file-in-other-project
@@ -546,10 +556,10 @@
         :desc "Find recent project files"    "r" #'projectile-recentf
         :desc "Run project"                  "R" #'projectile-run-project
         :desc "Save project files"           "s" #'projectile-save-project-buffers
-        :desc "Pop up scratch buffer"        "x" #'doom/open-project-scratch-buffer
-        :desc "Switch to scratch buffer"     "X" #'doom/switch-to-project-scratch-buffer
         :desc "List project tasks"           "t" #'magit-todos-list
-        :desc "Test project"                 "T" #'projectile-test-project)
+        :desc "Test project"                 "T" #'projectile-test-project
+        :desc "Pop up scratch buffer"        "x" #'doom/open-project-scratch-buffer
+        :desc "Switch to scratch buffer"     "X" #'doom/switch-to-project-scratch-buffer)
 
       ;;; <leader> q --- quit/session
       (:prefix-map ("q" . "quit/session")
@@ -586,21 +596,24 @@
         :desc "Jump to visible link"         "l" #'link-hint-open-link
         :desc "Jump to link"                 "L" #'ffap-menu
         :desc "Jump list"                    "j" #'evil-show-jumps
-        :desc "Jump to mark"                 "m" #'evil-show-marks
+        :desc "Jump to bookmark"             "m" #'bookmark-jump
         :desc "Look up online"               "o" #'+lookup/online
         :desc "Look up online (w/ prompt)"   "O" #'+lookup/online-select
         :desc "Look up in local docsets"     "k" #'+lookup/in-docsets
         :desc "Look up in all docsets"       "K" #'+lookup/in-all-docsets
         :desc "Search project"               "p" #'+default/search-project
         :desc "Search other project"         "P" #'+default/search-other-project
+        :desc "Jump to mark"                 "r" #'evil-show-marks
         :desc "Search buffer"                "s" #'swiper-isearch
-        :desc "Search buffer for thing at point" "S" #'swiper-isearch-thing-at-point)
+        :desc "Search buffer for thing at point" "S" #'swiper-isearch-thing-at-point
+        :desc "Dictionary"                   "t" #'+lookup/dictionary-definition
+        :desc "Thesaurus"                    "T" #'+lookup/synonyms)
 
       ;;; <leader> t --- toggle
       (:prefix-map ("t" . "toggle")
         :desc "Big mode"                     "b" #'doom-big-font-mode
         :desc "Flymake"                      "f" #'flymake-mode
-        (:when (featurep! :tools flycheck)
+        (:when (featurep! :checkers syntax)
           :desc "Flycheck"                   "f" #'flycheck-mode)
         :desc "Frame fullscreen"             "F" #'toggle-frame-fullscreen
         :desc "Evil goggles"                 "g" #'evil-goggles-mode
@@ -609,13 +622,15 @@
         :desc "Indent style"                 "I" #'doom/toggle-indent-style
         :desc "Line numbers"                 "l" #'doom/toggle-line-numbers
         (:when (featurep! :lang org +present)
-          :desc "org-tree-slide mode"        "p" #'+org-present/start)
+          :desc "org-tree-slide mode"        "p" #'org-tree-slide-mode)
         :desc "Read-only mode"               "r" #'read-only-mode
-        (:when (featurep! :tools flyspell)
+        (:when (featurep! :checkers spell)
           :desc "Flyspell"                   "s" #'flyspell-mode)
         (:when (featurep! :lang org +pomodoro)
           :desc "Pomodoro timer"             "t" #'org-pomodoro)
-        :desc "Word-wrap mode"               "w" #'+word-wrap-mode
+        :desc "Soft line wrapping"           "w" #'visual-line-mode
+        (:when (featurep! :editor word-wrap)
+          :desc "Soft line wrapping"         "w" #'+word-wrap-mode)
         :desc "Zen mode"                     "z" #'writeroom-mode))
 
 (after! which-key

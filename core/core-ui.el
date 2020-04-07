@@ -89,7 +89,8 @@ size.")
     (unless (or doom-inhibit-switch-window-hooks
                 (eq doom--last-window (selected-window))
                 (minibufferp))
-      (let ((doom-inhibit-switch-window-hooks t))
+      (let ((doom-inhibit-switch-window-hooks t)
+            (inhibit-redisplay t))
         (run-hooks 'doom-switch-window-hook)
         (setq doom--last-window (selected-window))))))
 
@@ -107,7 +108,8 @@ size.")
             (eq (current-buffer) (get-buffer buffer-or-name))
             (and (eq orig-fn #'switch-to-buffer) (car args)))
         (apply orig-fn buffer-or-name args)
-      (let ((doom-inhibit-switch-buffer-hooks t))
+      (let ((doom-inhibit-switch-buffer-hooks t)
+            (inhibit-redisplay t))
         (when-let (buffer (apply orig-fn buffer-or-name args))
           (with-current-buffer (if (windowp buffer)
                                    (window-buffer buffer)
@@ -119,7 +121,8 @@ size.")
   (let ((gc-cons-threshold most-positive-fixnum))
     (if doom-inhibit-switch-buffer-hooks
         (apply orig-fn args)
-      (let ((doom-inhibit-switch-buffer-hooks t))
+      (let ((doom-inhibit-switch-buffer-hooks t)
+            (inhibit-redisplay t))
         (when-let (buffer (apply orig-fn args))
           (with-current-buffer buffer
             (run-hooks 'doom-switch-buffer-hook))
@@ -173,7 +176,12 @@ read-only or not file-visiting."
 
 (setq hscroll-margin 2
       hscroll-step 1
-      scroll-conservatively 10
+      ;; Emacs spends too much effort recentering the screen if you scroll the
+      ;; cursor more than N lines past window edges (where N is the settings of
+      ;; `scroll-conservatively'). This is especially slow in larger files
+      ;; during large-scale scrolling commands. If kept over 100, the window is
+      ;; never automatically recentered.
+      scroll-conservatively 101
       scroll-margin 0
       scroll-preserve-screen-position t
       ;; Reduce cursor lag by a tiny bit by not auto-adjusting `window-vscroll'
@@ -277,14 +285,14 @@ windows, switch to `doom-fallback-buffer'. Otherwise, delegate to original
 (setq window-resize-pixelwise t
       frame-resize-pixelwise t)
 
-(unless EMACS27+
+(unless (assq 'menu-bar-lines default-frame-alist)
   ;; We do this in early-init.el too, but in case the user is on Emacs 26 we do
   ;; it here too: disable tool and scrollbars, as Doom encourages
   ;; keyboard-centric workflows, so these are just clutter (the scrollbar also
   ;; impacts performance).
-  (push '(menu-bar-lines . 0) default-frame-alist)
-  (push '(tool-bar-lines . 0) default-frame-alist)
-  (push '(vertical-scroll-bars) default-frame-alist))
+  (add-to-list 'default-frame-alist '(menu-bar-lines . 0))
+  (add-to-list 'default-frame-alist '(tool-bar-lines . 0))
+  (add-to-list 'default-frame-alist '(vertical-scroll-bars)))
 
 (when IS-MAC
   ;; Curse Lion and its sudden but inevitable fullscreen mode!
@@ -345,8 +353,8 @@ windows, switch to `doom-fallback-buffer'. Otherwise, delegate to original
 ;; while we're in the minibuffer.
 (setq enable-recursive-minibuffers t)
 
-;; Show current key-sequence in minibuffer, like vim does. Any feedback after
-;; typing is better UX than no feedback at all.
+;; Show current key-sequence in minibuffer ala 'set showcmd' in vim. Any
+;; feedback after typing is better UX than no feedback at all.
 (setq echo-keystrokes 0.02)
 
 ;; Expand the minibuffer to fit multi-line text displayed in the echo-area. This
@@ -356,7 +364,7 @@ windows, switch to `doom-fallback-buffer'. Otherwise, delegate to original
       max-mini-window-height 0.15)
 
 ;; Typing yes/no is obnoxious when y/n will do
-(fset #'yes-or-no-p #'y-or-n-p)
+(advice-add #'yes-or-no-p :override #'y-or-n-p)
 
 ;; Try really hard to keep the cursor from getting stuck in the read-only prompt
 ;; portion of the minibuffer.
@@ -413,17 +421,17 @@ windows, switch to `doom-fallback-buffer'. Otherwise, delegate to original
 
   ;; Temporarily disable `hl-line' when selection is active, since it doesn't
   ;; serve much purpose when the selection is so much more visible.
-  (defvar doom-buffer-hl-line-mode nil)
+  (defvar doom--hl-line-mode nil)
 
   (add-hook! '(evil-visual-state-entry-hook activate-mark-hook)
     (defun doom-disable-hl-line-h ()
       (when hl-line-mode
-        (setq-local doom-buffer-hl-line-mode t)
+        (setq-local doom--hl-line-mode t)
         (hl-line-mode -1))))
 
   (add-hook! '(evil-visual-state-exit-hook deactivate-mark-hook)
     (defun doom-enable-hl-line-maybe-h ()
-      (when doom-buffer-hl-line-mode
+      (when doom--hl-line-mode
         (hl-line-mode +1)))))
 
 
@@ -475,8 +483,8 @@ windows, switch to `doom-fallback-buffer'. Otherwise, delegate to original
          (defadvice! doom--disable-all-the-icons-in-tty-a (orig-fn &rest args)
            "Return a blank string in tty Emacs, which doesn't support multiple fonts."
            :around '(all-the-icons-octicon all-the-icons-material
-                                           all-the-icons-faicon all-the-icons-fileicon
-                                           all-the-icons-wicon all-the-icons-alltheicon)
+                     all-the-icons-faicon all-the-icons-fileicon
+                     all-the-icons-wicon all-the-icons-alltheicon)
            (if (or (not after-init-time) (display-multi-font-p))
                (apply orig-fn args)
              "")))
@@ -533,33 +541,37 @@ windows, switch to `doom-fallback-buffer'. Otherwise, delegate to original
 ;; Underline looks a bit better when drawn lower
 (setq x-underline-at-descent-line t)
 
+;; DEPRECATED In Emacs 27
 (defvar doom--prefer-theme-elc nil
   "If non-nil, `load-theme' will prefer the compiled theme (unlike its default
 behavior). Do not set this directly, this is let-bound in `doom-init-theme-h'.")
 
 (defun doom-init-fonts-h ()
   "Loads `doom-font'."
-  (cond (doom-font
-         (cl-pushnew
-          ;; Avoiding `set-frame-font' because it does a lot of extra, expensive
-          ;; work we can avoid by setting the font frame parameter instead.
-          (cons 'font
-                (cond ((stringp doom-font) doom-font)
-                      ((fontp doom-font) (font-xlfd-name doom-font))
-                      ((signal 'wrong-type-argument (list '(fontp stringp)
-                                                          doom-font)))))
-          default-frame-alist
-          :key #'car :test #'eq))
-        ((display-graphic-p)
-         ;; We try our best to record your system font, so `doom-big-font-mode'
-         ;; can still use it to compute a larger font size with.
-         (setq font-use-system-font t
-               doom-font (face-attribute 'default :font)))))
+  (cond
+   (doom-font
+    (cl-pushnew
+     ;; Avoiding `set-frame-font' because it does a lot of extra, expensive
+     ;; work we can avoid by setting the font frame parameter instead.
+     (cons 'font
+           (cond ((stringp doom-font) doom-font)
+                 ((fontp doom-font) (font-xlfd-name doom-font))
+                 ((signal 'wrong-type-argument (list '(fontp stringp)
+                                                     doom-font)))))
+     default-frame-alist
+     :key #'car :test #'eq))
+   ((display-graphic-p)
+    ;; We try our best to record your system font, so `doom-big-font-mode'
+    ;; can still use it to compute a larger font size with.
+    (setq font-use-system-font t
+          doom-font (face-attribute 'default :font)))))
 
 (defun doom-init-extra-fonts-h (&optional frame)
   "Loads `doom-variable-pitch-font',`doom-serif-font' and `doom-unicode-font'."
   (condition-case e
       (with-selected-frame (or frame (selected-frame))
+        (when doom-font
+          (set-face-attribute 'fixed-pitch nil :font doom-font))
         (when doom-serif-font
           (set-face-attribute 'fixed-pitch-serif nil :font doom-serif-font))
         (when doom-variable-pitch-font
@@ -577,7 +589,7 @@ behavior). Do not set this directly, this is let-bound in `doom-init-theme-h'.")
   "Load the theme specified by `doom-theme' in FRAME."
   (when (and doom-theme (not (memq doom-theme custom-enabled-themes)))
     (with-selected-frame (or frame (selected-frame))
-      (let ((doom--prefer-theme-elc t))
+      (let ((doom--prefer-theme-elc t)) ; DEPRECATED in Emacs 27
         (load-theme doom-theme t)))))
 
 (defadvice! doom--run-load-theme-hooks-a (theme &optional _no-confirm no-enable)
@@ -588,18 +600,28 @@ behavior). Do not set this directly, this is let-bound in `doom-init-theme-h'.")
           doom-init-theme-p t)
     (run-hooks 'doom-load-theme-hook)))
 
-(defadvice! doom--prefer-compiled-theme-a (orig-fn &rest args)
-  "Make `load-theme' prioritize the byte-compiled theme for a moderate boost in
-startup (or theme switch) time, so long as `doom--prefer-theme-elc' is non-nil."
-  :around #'load-theme
-  (if (or (null after-init-time)
-          doom--prefer-theme-elc)
-      (cl-letf* ((old-locate-file (symbol-function 'locate-file))
-                 ((symbol-function 'locate-file)
-                  (lambda (filename path &optional _suffixes predicate)
-                    (funcall old-locate-file filename path '("c" "") predicate))))
-        (apply orig-fn args))
-    (apply orig-fn args)))
+(defadvice! doom--disable-enabled-themes-a (theme &optional _no-confirm no-enable)
+  "Disable previously enabled themes before loading a new one.
+Otherwise, themes can conflict with each other."
+  :after-while #'load-theme
+  (unless no-enable
+    (mapc #'disable-theme (remq theme custom-enabled-themes))))
+
+(unless EMACS27+
+  ;; DEPRECATED Not needed in Emacs 27
+  (defadvice! doom--prefer-compiled-theme-a (orig-fn &rest args)
+    "Have `load-theme' prioritize the byte-compiled theme.
+This offers a moderate boost in startup (or theme switch) time, so long as
+`doom--prefer-theme-elc' is non-nil."
+    :around #'load-theme
+    (if (or (null after-init-time)
+            doom--prefer-theme-elc)
+        (cl-letf* ((old-locate-file (symbol-function 'locate-file))
+                   ((symbol-function 'locate-file)
+                    (lambda (filename path &optional _suffixes predicate)
+                      (funcall old-locate-file filename path '("c" "") predicate))))
+          (apply orig-fn args))
+      (apply orig-fn args))))
 
 
 ;;
@@ -640,9 +662,16 @@ startup (or theme switch) time, so long as `doom--prefer-theme-elc' is non-nil."
 ;;; Fixes/hacks
 
 ;; Doom doesn't support `customize' and it never will. It's a clumsy interface
-;; for something that should be configured from only one place ($DOOMDIR), so we
-;; disable them.
-(put 'customize 'disabled "Doom doesn't support `customize', configure Emacs from $DOOMDIR/config.el instead")
+;; that sets variables at a time where it can be easily and unpredictably
+;; overwritten. Configure things from your $DOOMDIR instead.
+(dolist (sym '(customize-option customize-browse customize-group customize-face
+               customize-rogue customize-saved customize-apropos
+               customize-changed customize-unsaved customize-variable
+               customize-set-value customize-customized customize-set-variable
+               customize-apropos-faces customize-save-variable
+               customize-apropos-groups customize-apropos-options
+               customize-changed-options customize-save-customized))
+  (put sym 'disabled "Doom doesn't support `customize', configure Emacs from $DOOMDIR/config.el instead"))
 (put 'customize-themes 'disabled "Set `doom-theme' or use `load-theme' in $DOOMDIR/config.el instead")
 
 ;; Doesn't exist in terminal Emacs, so we define it to prevent void-function
@@ -652,8 +681,8 @@ startup (or theme switch) time, so long as `doom--prefer-theme-elc' is non-nil."
 
 (after! whitespace
   (defun doom-disable-whitespace-mode-in-childframes-a (orig-fn)
-    "`whitespace-mode' inundates child frames with whitspace markers, so disable
-it to fix all that visual noise."
+    "`whitespace-mode' inundates child frames with whitespace markers, so
+disable it to fix all that visual noise."
     (unless (frame-parameter nil 'parent-frame)
       (funcall orig-fn)))
   (add-function :around whitespace-enable-predicate #'doom-disable-whitespace-mode-in-childframes-a))

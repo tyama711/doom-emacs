@@ -1,37 +1,10 @@
 ;;; ui/doom/config.el -*- lexical-binding: t; -*-
 
-(defvar +doom-solaire-themes
-  '((doom-challenger-deep . t)
-    (doom-city-lights . t)
-    (doom-dracula . t)
-    (doom-molokai)
-    (doom-gruvbox . t)
-    (doom-nord . t)
-    (doom-nord-light . t)
-    (doom-nova)
-    (doom-one . t)
-    (doom-one-light . t)
-    (doom-opera . t)
-    (doom-snazzy . t)
-    (doom-solarized-dark . t)
-    (doom-solarized-light)
-    (doom-spacegrey . t)
-    (doom-tomorrow-day . t)
-    (doom-tomorrow-night . t)
-    (doom-vibrant))
-  "An alist of themes that support `solaire-mode'. If CDR is t, then
-`solaire-mode-swap-bg' will be used automatically, when the theme is loaded.")
-
-
-;;
-;;; Packages
-
 (use-package! doom-themes
   :defer t
   :init
   (unless doom-theme
     (setq doom-theme 'doom-one))
-  :config
   ;; improve integration w/ org-mode
   (add-hook 'doom-load-theme-hook #'doom-themes-org-config)
   ;; more Atom-esque file icons for neotree/treemacs
@@ -50,9 +23,9 @@
   :init
   (add-hook! 'doom-load-theme-hook :append
     (defun +doom-solaire-mode-swap-bg-maybe-h ()
-      (pcase-let ((`(,_theme . ,swap) (assq doom-theme +doom-solaire-themes)))
+      (when (string-prefix-p "doom-" (symbol-name doom-theme))
         (require 'solaire-mode)
-        (if swap (solaire-mode-swap-bg)))))
+        (solaire-mode-swap-bg))))
   :config
   ;; fringe can become unstyled when deleting or focusing frames
   (add-hook 'focus-in-hook #'solaire-mode-reset)
@@ -68,15 +41,17 @@
   ;; after eob. On Emacs 27 this no longer happens.
   (unless EMACS27+
     (defun +doom--line-range-fn ()
-      (cons (line-beginning-position)
-            (cond ((let ((eol (line-end-position)))
-                     (and (=  eol (point-max))
-                          (/= eol (line-beginning-position))))
-                   (1- (line-end-position)))
-                  ((or (eobp)
-                       (= (line-end-position 2) (point-max)))
-                   (line-end-position))
-                  ((line-beginning-position 2)))))
+      (let ((bol (line-beginning-position))
+            (eol (line-end-position))
+            (pmax (point-max)))
+        (cons bol
+              (cond ((and (=  eol pmax)
+                          (/= eol bol))
+                     (1- eol))
+                    ((or (eobp)
+                         (= eol pmax))
+                     eol)
+                    ((line-beginning-position 2))))))
     (setq hl-line-range-function #'+doom--line-range-fn))
 
   ;; Because fringes can't be given a buffer-local face, they can look odd, so
